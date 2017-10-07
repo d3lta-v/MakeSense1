@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MakeSense1 Console</title>
+  <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+  <meta charset="utf-8">
+  <script src="jquery-3.2.1.min.js"></script>
+  <style>
+  @import url('https://fonts.googleapis.com/css?family=Raleway:300,500,600');
+
+  /* Always set the map height explicitly to define the size of the div
+   * element that contains the map. */
+  #map {
+    height: 100%;
+  }
+  /* Make the map fill the window. */
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  h1 {
+    padding-left: 1.5em;
+    padding-top: 0.5em;
+    color: white;
+    font-family: 'Raleway', sans-serif;
+    font-weight: 300;
+    font-size: 300%;
+  }
+
+  .stations, .stations svg {
+    position: absolute;
+  }
+  .stations svg {
+    width: 170px;
+    height: 101px;
+    padding-right: 100px;
+    font-size: 20px;
+    font-family: 'Raleway', sans-serif;
+    font-weight: 500;
+  }
+
+  .loader {
+    border: 16px solid #f3f3f3; /* Light grey */
+    border-top: 16px solid #3498db; /* Blue */
+    border-radius: 50%;
+    width: 120px;
+    height: 120px;
+    animation: spin 2s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="debug"></div>
+  <div id="loaderContainer"></div>
+  <script src="http://d3js.org/d3.v3.min.js"></script>
+  <script>
+  // Function to easily calculate gradient from 2 colors and a percentage
+  function makeGradientColor(color1, color2, percent) {
+    var newColor = {};
+
+    function makeChannel(a, b) {
+      return(a + Math.round((b-a)*(percent/100)));
+    }
+
+    function makeColorPiece(num) {
+      num = Math.min(num, 255);   // not more than 255
+      num = Math.max(num, 0);     // not less than 0
+      var str = num.toString(16);
+      if (str.length < 2) {
+        str = "0" + str;
+      }
+      return(str);
+    }
+
+    newColor.r = makeChannel(color1.r, color2.r);
+    newColor.g = makeChannel(color1.g, color2.g);
+    newColor.b = makeChannel(color1.b, color2.b);
+    newColor.cssColor = "#" +
+    makeColorPiece(newColor.r) +
+    makeColorPiece(newColor.g) +
+    makeColorPiece(newColor.b);
+    return(newColor);
+  }
+  // var color1 = {r:255, g:251, b:213};
+  var color1 = {r:255, g:255, b:255};
+  // var color2 = {r:178, g:10, b:44};
+  var color2 = {r:255, g:0, b:0};
+
+  // Load up Google Maps
+  function initMap() {
+    // Styles a map in night mode.
+    var map = new google.maps.Map(d3.select("#map").node(), {
+      center: {lat: 1.350065, lng: 103.778273},
+      zoom: 15,
+      styles: [
+        {
+          "stylers": [
+            {
+              "hue": "#ff1a00"
+            },
+            {
+              "invert_lightness": true
+            },
+            {
+              "saturation": -100
+            },
+            {
+              "lightness": 33
+            },
+            {
+              "gamma": 0.5
+            }
+          ]
+        },
+        {
+          "featureType": "water",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#2D333C"
+            }
+          ]
+        }
+      ],
+      zoomControl: true,
+      mapTypeControl: false,
+      scaleControl: true,
+      streetViewControl: false,
+      rotateControl: true,
+      fullscreenControl: false
+    });
+    //map.setMapTypeId('terrain');
+
+    // Add elements into the view
+    var x = document.getElementById("debug");
+    map.controls[google.maps.ControlPosition.TOP_LEFT].push(x);
+    $("#debug").html("<h1>MakeSense1 Console</h1>");
+    var y = document.getElementById("loaderContainer");
+    map.controls[google.maps.ControlPosition.CENTER].push(y);
+    $("#loaderContainer").html("<div class=\"loader\"></div>");
+
+    // Load the station data. When the data comes back, create an overlay.
+    var url = null;
+	if (url == null) {
+	  window.alert('Please insert a valid API endpoint before viewing the visualization!');
+	}
+	d3.json(url, function(error, data) {
+      // Remove spinner once loading completes
+      var x = document.getElementById("loaderContainer");
+      x.style.display = 'none';
+
+      // Handle error
+      if (error) {
+        window.alert('An error occured while loading');
+      } else {
+        console.log('Loaded Successfully');
+      }
+
+      var overlay = new google.maps.OverlayView();
+
+      // Add the container when the overlay is added to the map.
+      overlay.onAdd = function() {
+        var layer = d3.select(this.getPanes().overlayLayer)
+        .append("div")
+        .attr("class", "stations");
+
+        // Draw each marker as a separate SVG element.
+        overlay.draw = function() {
+          var projection = this.getProjection();
+          var padding = 50;
+
+          var marker = layer.selectAll("svg")
+          .data(d3.entries(data))
+          .each(transform) // update existing markers
+          .enter().append("svg")
+          .each(transform)
+          .attr("class", "marker");
+
+          // Add a circle.
+          marker.append("circle")
+          .attr("r", 50)
+          .attr("cx", padding)
+          .attr("cy", padding)
+          .attr("fill-opacity", "0.5")
+          .attr("fill", function(d) {
+            return makeGradientColor(color1, color2, d.value[3]*100).cssColor;
+          });
+
+          // Add title label
+          marker.append("text")
+          .attr("x", padding + 60)
+          .attr("y", padding - 15)
+          .attr("dy", ".31em")
+          .attr("fill", "white")
+          .attr("font-weight", 600)
+          .text(function(d) { return d.key; });
+
+          // Add riskFactor label
+          marker.append("text")
+          .attr("x", padding + 60)
+          .attr("y", padding + 15)
+          .attr("dy", ".31em")
+          .attr("fill", "white")
+          .attr("font-weight", 500)
+          .text(function(d) {
+            return "Risk Factor: " + Math.round(d.value[3] * 100) + "%";
+          });
+
+          function transform(d) {
+            d = new google.maps.LatLng(d.value[0], d.value[1]);
+            d = projection.fromLatLngToDivPixel(d);
+            return d3.select(this)
+            .style("left", (d.x - padding) + "px")
+            .style("top", (d.y - padding) + "px");
+          }
+        };
+      };
+
+      // Bind our overlay to the map
+      overlay.setMap(map);
+    });
+  }
+  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBbnHy_9HBHYDYssKdBjJyX2W96lYoB5m8&callback=initMap&language=ja&region=SG" async defer></script>
+</body>
+</html>
